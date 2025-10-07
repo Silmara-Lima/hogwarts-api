@@ -7,8 +7,8 @@ export const createCharacterSchema = z.object({
   lastName: z.string().min(2, "O sobrenome deve ter pelo menos 2 caracteres"),
   role: z.enum(["student", "teacher"]).optional(),
   bloodStatus: z.string().optional(),
-  houseId: z.string().optional(), // agora aceita apenas id string
-  subjectIds: z.array(z.string()).optional(), // array de ids
+  houseId: z.number().optional(),
+  subjectIds: z.array(z.number()).optional(),
 });
 
 // Schema para atualizar personagem (parcial)
@@ -17,6 +17,6 @@ export const updateCharacterSchema = z.object({
   lastName: z.string().min(2).optional(),
   role: z.enum(["student", "teacher"]).optional(),
   bloodStatus: z.string().optional(),
-  houseId: z.string().nullable().optional(),
-  subjectIds: z.array(z.string()).optional(),
+  houseId: z.number().nullable().optional(),
+  subjectIds: z.array(z.number()).optional(),
 });

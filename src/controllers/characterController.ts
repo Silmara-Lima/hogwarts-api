@@ -1,6 +1,7 @@
 // src/controllers/characterController.ts
 import { Request, Response, NextFunction } from "express";
 import * as characterService from "../services/characterService";
+import { createCharacterSchema, updateCharacterSchema } from "../schemas/characterValidator";
 
 // ===== LISTAR TODOS OS PERSONAGENS =====
 export const getAll = async (req: Request, res: Response, next: NextFunction) => {
@@ -8,7 +9,6 @@ export const getAll = async (req: Request, res: Response, next: NextFunction) =>
     const characters = await characterService.getAllCharacters();
     res.json(characters);
   } catch (err) {
-    console.error("Error fetching characters:", err);
     next(err);
   }
 };
@@ -20,11 +20,11 @@ export const getById = async (req: Request, res: Response, next: NextFunction) =
     if (isNaN(id)) return res.status(400).json({ error: "Invalid character ID" });
 
     const character = await characterService.getCharacterById(id);
-    if (!character) return res.status(404).json({ error: "Character not found" });
-
     res.json(character);
-  } catch (err) {
-    console.error(`Error fetching character ${req.params.id}:`, err);
+  } catch (err: any) {
+    if (err.message === "Character not found") {
+      return res.status(404).json({ error: "Character not found" });
+    }
     next(err);
   }
 };
@@ -32,30 +32,25 @@ export const getById = async (req: Request, res: Response, next: NextFunction) =
 // ===== CRIAR PERSONAGEM =====
 export const create = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { firstName, lastName, houseId, role, bloodStatus, subjectIds } = req.body;
+    // Conversão de tipos antes do Zod
+    const body = {
+      ...req.body,
+      houseId: req.body.houseId !== undefined ? Number(req.body.houseId) : undefined,
+      subjectIds: req.body.subjectIds
+        ? req.body.subjectIds.map((id: any) => Number(id))
+        : undefined,
+    };
 
-    if (!firstName || !lastName) {
-      return res.status(400).json({ error: "firstName and lastName are required" });
-    }
-
-    // Converter houseId para number se fornecido
-    const parsedHouseId = houseId !== undefined ? Number(houseId) : undefined;
-    if (houseId !== undefined && isNaN(parsedHouseId)) {
-      return res.status(400).json({ error: "Invalid houseId" });
-    }
-
-    const newCharacter = await characterService.createCharacter({
-      firstName,
-      lastName,
-      role,
-      bloodStatus,
-      houseId: parsedHouseId,
-      subjectIds,
-    });
-
+    const parsedData = createCharacterSchema.parse(body);
+    const newCharacter = await characterService.createCharacter(parsedData);
     res.status(201).json(newCharacter);
-  } catch (err) {
-    console.error("Error creating character:", err);
+  } catch (err: any) {
+    if (err.name === "ZodError") {
+      return res.status(400).json({
+        message: "Erro de validação dos dados enviados.",
+        errors: err.errors,
+      });
+    }
     next(err);
   }
 };
@@ -66,29 +61,32 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
     const id = Number(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid character ID" });
 
-    const { firstName, lastName, houseId, role, bloodStatus, subjectIds } = req.body;
+    // Conversão de tipos antes do Zod
+    const body = {
+      ...req.body,
+      houseId:
+        req.body.houseId !== undefined && req.body.houseId !== null
+          ? Number(req.body.houseId)
+          : req.body.houseId,
+      subjectIds: req.body.subjectIds
+        ? req.body.subjectIds.map((id: any) => Number(id))
+        : undefined,
+    };
 
-    const parsedHouseId =
-      houseId !== undefined && houseId !== null ? Number(houseId) : houseId;
-    if (houseId !== undefined && houseId !== null && isNaN(parsedHouseId)) {
-      return res.status(400).json({ error: "Invalid houseId" });
-    }
-
-    const updatedCharacter = await characterService.updateCharacter(id, {
-      firstName,
-      lastName,
-      role,
-      bloodStatus,
-      houseId: parsedHouseId,
-      subjectIds,
-    });
+    const parsedData = updateCharacterSchema.parse(body);
+    const updatedCharacter = await characterService.updateCharacter(id, parsedData);
 
     res.json(updatedCharacter);
   } catch (err: any) {
-    if (err.code === "P2025") {
+    if (err.name === "ZodError") {
+      return res.status(400).json({
+        message: "Erro de validação dos dados enviados.",
+        errors: err.errors,
+      });
+    }
+    if (err.message === "Character not found") {
       return res.status(404).json({ error: "Character not found" });
     }
-    console.error(`Error updating character ${req.params.id}:`, err);
     next(err);
   }
 };
@@ -102,10 +100,9 @@ export const remove = async (req: Request, res: Response, next: NextFunction) =>
     await characterService.deleteCharacter(id);
     res.status(204).send();
   } catch (err: any) {
-    if (err.code === "P2025") {
+    if (err.message === "Character not found") {
       return res.status(404).json({ error: "Character not found" });
     }
-    console.error(`Error deleting character ${req.params.id}:`, err);
     next(err);
   }
 };

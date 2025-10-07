@@ -1,38 +1,36 @@
 import prisma from "../utils/prisma";
 
-// ===== GET ALL CHARACTERS =====
+type CharacterData = {
+  firstName: string;
+  lastName: string;
+  role?: "student" | "teacher";
+  bloodStatus?: string;
+  houseId?: number | null;
+  subjectIds?: number[];
+};
+
 export const getAllCharacters = async () => {
-  try {
-    return await prisma.character.findMany({
-      include: {
-        house: true, // retorna null se não houver houseId
-        enrollments: { include: { subject: true } }, // retorna array vazio se não houver
-      },
-    });
-  } catch (err) {
-    console.error("Error fetching characters:", err);
-    throw new Error("Failed to fetch characters");
-  }
+  return await prisma.character.findMany({
+    include: {
+      house: true,
+      enrollments: { include: { subject: true } },
+    },
+  });
 };
 
-// ===== GET CHARACTER BY ID =====
 export const getCharacterById = async (id: number) => {
-  try {
-    return await prisma.character.findUnique({
-      where: { id },
-      include: {
-        house: true,
-        enrollments: { include: { subject: true } },
-      },
-    });
-  } catch (err) {
-    console.error(`Error fetching character ${id}:`, err);
-    throw new Error("Failed to fetch character");
-  }
+  const character = await prisma.character.findUnique({
+    where: { id },
+    include: {
+      house: true,
+      enrollments: { include: { subject: true } },
+    },
+  });
+  if (!character) throw new Error("Character not found");
+  return character;
 };
 
-// ===== CREATE CHARACTER =====
-export const createCharacter = async (data: any) => {
+export const createCharacter = async (data: CharacterData) => {
   try {
     const { firstName, lastName, role, bloodStatus, houseId, subjectIds } = data;
 
@@ -42,29 +40,35 @@ export const createCharacter = async (data: any) => {
         lastName,
         role,
         bloodStatus,
-        house: houseId ? { connect: { id: Number(houseId) } } : undefined,
+        house: houseId ? { connect: { id: houseId } } : undefined,
       },
       include: { house: true },
     });
 
     if (subjectIds?.length) {
       await prisma.enrollment.createMany({
-        data: subjectIds.map((subjectId: number) => ({
+        data: subjectIds.map((subjectId) => ({
           characterId: character.id,
-          subjectId: Number(subjectId),
+          subjectId,
         })),
       });
     }
 
     return getCharacterById(character.id);
-  } catch (err) {
-    console.error("Error creating character:", err);
-    throw new Error("Failed to create character");
+  } catch (err: any) {
+    console.error("🔥 Prisma error:", err.message);
+
+    if (err.code === "P2003") {
+      throw new Error("Foreign key constraint failed: houseId or subjectId not found");
+    }
+    if (err.code === "P2002") {
+      throw new Error("Unique constraint failed");
+    }
+    throw err;
   }
 };
 
-// ===== UPDATE CHARACTER =====
-export const updateCharacter = async (id: number, data: any) => {
+export const updateCharacter = async (id: number, data: CharacterData) => {
   try {
     const { firstName, lastName, role, bloodStatus, houseId, subjectIds } = data;
 
@@ -75,39 +79,38 @@ export const updateCharacter = async (id: number, data: any) => {
         lastName,
         role,
         bloodStatus,
-        house: houseId
-          ? { connect: { id: Number(houseId) } }
-          : houseId === null
-          ? { disconnect: true }
-          : undefined,
+        house:
+          houseId !== undefined
+            ? houseId === null
+              ? { disconnect: true }
+              : { connect: { id: houseId } }
+            : undefined,
       },
     });
 
     if (subjectIds) {
-      // Remove inscrições antigas e recria
       await prisma.enrollment.deleteMany({ where: { characterId: id } });
       await prisma.enrollment.createMany({
-        data: subjectIds.map((subjectId: number) => ({
-          characterId: id,
-          subjectId: Number(subjectId),
-        })),
+        data: subjectIds.map((subjectId) => ({ characterId: id, subjectId })),
       });
     }
 
     return getCharacterById(id);
-  } catch (err) {
-    console.error(`Error updating character ${id}:`, err);
-    throw new Error("Failed to update character");
+  } catch (err: any) {
+    console.error("🔥 Prisma error (update):", err.message);
+
+    if (err.code === "P2025") throw new Error("Character not found");
+    if (err.code === "P2003") throw new Error("Foreign key constraint failed");
+    throw err;
   }
 };
 
-// ===== DELETE CHARACTER =====
 export const deleteCharacter = async (id: number) => {
   try {
     await prisma.enrollment.deleteMany({ where: { characterId: id } });
     return await prisma.character.delete({ where: { id } });
-  } catch (err) {
-    console.error(`Error deleting character ${id}:`, err);
-    throw new Error("Failed to delete character");
+  } catch (err: any) {
+    if (err.code === "P2025") throw new Error("Character not found");
+    throw err;
   }
 };
